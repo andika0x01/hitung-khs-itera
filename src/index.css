@@ -1281,3 +1281,149 @@ select option {
     padding-bottom: 0.5rem;
   }
 }
+
+/* ==========================================
+   Scenario Panel & Comparison Styles
+   ========================================== */
+.panel-left-scenarios {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.scenario-selector-container {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.select-scenario-terminal {
+  width: 100%;
+  padding: 0.45rem 1.75rem 0.45rem 0.65rem;
+  border: 1px solid var(--border-color);
+  background-color: var(--bg-input);
+  color: var(--text-primary);
+  border-radius: var(--radius-console);
+  font-family: var(--font-display);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.scenario-action-buttons {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.5rem;
+}
+
+.btn-scenario-action {
+  background-color: transparent;
+  color: var(--color-grey-medium);
+  border: 1px solid var(--border-color);
+  padding: 0.4rem 0.6rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  font-family: var(--font-display);
+  border-radius: var(--radius-console);
+  cursor: pointer;
+  text-align: center;
+  transition: all var(--transition-speed);
+}
+
+.btn-scenario-action:hover {
+  background-color: var(--color-white);
+  color: #000000;
+  border-color: var(--color-white);
+  box-shadow: var(--shadow-neon-white);
+}
+
+.btn-scenario-action.danger {
+  color: #f43f5e;
+  border-color: rgba(244, 63, 94, 0.3);
+}
+
+.btn-scenario-action.danger:hover {
+  background-color: #f43f5e;
+  color: #ffffff;
+  border-color: #f43f5e;
+  box-shadow: 0 0 10px rgba(244, 63, 94, 0.4);
+}
+
+.scenario-comparison-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  border-top: 1px dashed var(--border-color);
+  padding-top: 1rem;
+}
+
+.comparison-header {
+  font-family: var(--font-display);
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.25rem;
+}
+
+.comparison-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  background-color: var(--bg-input);
+  border: 1px solid var(--border-color);
+  padding: 0.75rem;
+  border-radius: var(--radius-console);
+  cursor: pointer;
+  transition: all var(--transition-speed);
+}
+
+.comparison-item:hover {
+  border-color: var(--color-grey-medium);
+  background-color: var(--bg-input-focus);
+}
+
+.comparison-item.active {
+  border-color: var(--color-white);
+  box-shadow: var(--shadow-neon-grey);
+}
+
+.comparison-name-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.comparison-name {
+  font-family: var(--font-body);
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  text-overflow: ellipsis;
+  overflow: hidden;
+  white-space: nowrap;
+  max-width: 170px;
+}
+
+.active-tag {
+  font-family: var(--font-display);
+  font-size: 0.6rem;
+  color: var(--color-white);
+  font-weight: 700;
+  border: 1px solid var(--color-white);
+  padding: 1px 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.1);
+  letter-spacing: 0.05em;
+}
+
+.comparison-stats {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+}
+
+.comparison-stats strong {
+  color: var(--color-white);
+}
+

@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef } from "react";
-import type { CourseRow } from "./types";
+import type { CourseRow, Scenario } from "./types";
 import { GRADE_WEIGHTS } from "./types";
 import * as pdfjsLib from "pdfjs-dist";
 
-// @ts-ignore
+// @ts-expect-error: PDF worker import path is not resolved statically by TypeScript
 import pdfjsWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
@@ -93,10 +93,14 @@ const parsePdfFile = async (file: File): Promise<{ metadata: StudentMetadata; co
         for (let i = 1; i <= pdf.numPages; i++) {
           const page = await pdf.getPage(i);
           const textContent = await page.getTextContent();
-          const items = textContent.items as any[];
+          interface TextItem {
+            str: string;
+            transform: number[];
+          }
+          const items = textContent.items as unknown as TextItem[];
 
           // Reconstruct lines by Y-coordinate
-          const linesMap: Record<number, any[]> = {};
+          const linesMap: Record<number, { text: string; x: number; y: number }[]> = {};
           items.forEach((item) => {
             if (!item.str || item.str.trim() === "") return;
             const x = item.transform[4];
@@ -137,7 +141,7 @@ const parsePdfFile = async (file: File): Promise<{ metadata: StudentMetadata; co
         const faculty = fullText.match(/Faculty\s*:\s*([^\n\r]+)/i)?.[1]?.trim() || "";
         const studyProgram = fullText.match(/Study\s+Program\s*:\s*([^\n\r]+)/i)?.[1]?.trim() || "";
         const totalCredit = fullText.match(/Total\s+Credit\s*:\s*(\d+)/i)?.[1]?.trim() || "";
-        const ipk = fullText.match(/Grade\s+Point\s*\(GP\)\s*:\s*([\d\.]+)/i)?.[1]?.trim() || "";
+        const ipk = fullText.match(/Grade\s+Point\s*\(GP\)\s*:\s*([\d.]+)/i)?.[1]?.trim() || "";
 
         const metadata: StudentMetadata = { name, nim, faculty, studyProgram, totalCredit, ipk };
 
@@ -175,37 +179,161 @@ const parsePdfFile = async (file: File): Promise<{ metadata: StudentMetadata; co
 };
 
 function App() {
-  const [semestersData, setSemestersData] = useState<Record<number, CourseRow[]>>(() => {
+  const [scenarios, setScenarios] = useState<Scenario[]>(() => {
+    try {
+      const stored = localStorage.getItem("itera_khs_scenarios");
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
+      }
+    } catch (e) {
+      console.error("Failed to parse scenarios from localStorage", e);
+    }
+
+    // Migration from legacy semestersData
+    let initialSemestersData: Record<number, CourseRow[]> | null = null;
     try {
       const stored = localStorage.getItem("itera_khs_semesters");
       if (stored) {
         const parsed = JSON.parse(stored);
         if (parsed && typeof parsed === "object") {
-          return parsed;
+          initialSemestersData = parsed;
         }
       }
     } catch (e) {
       console.error("Failed to parse semesters from localStorage", e);
     }
 
-    // Legacy migration
-    try {
-      const legacy = localStorage.getItem("itera_khs_rows");
-      if (legacy) {
-        const parsed = JSON.parse(legacy);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          localStorage.removeItem("itera_khs_rows");
-          return { 1: parsed };
+    // Legacy migration (older row structure)
+    if (!initialSemestersData) {
+      try {
+        const legacy = localStorage.getItem("itera_khs_rows");
+        if (legacy) {
+          const parsed = JSON.parse(legacy);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            localStorage.removeItem("itera_khs_rows");
+            initialSemestersData = { 1: parsed };
+          }
         }
+      } catch (e) {
+        console.error("Failed to parse legacy rows", e);
       }
-    } catch (e) {
-      console.error("Failed to parse legacy rows", e);
     }
 
-    return {
+    const defaultSemestersData = initialSemestersData || {
       1: [createEmptyRow(3), createEmptyRow(3), createEmptyRow(2), createEmptyRow(4), createEmptyRow(3)],
     };
+
+    return [
+      {
+        id: "default",
+        name: "Skenario Utama",
+        semestersData: defaultSemestersData,
+      },
+    ];
   });
+
+  const [activeScenarioId, setActiveScenarioId] = useState<string>(() => {
+    return localStorage.getItem("itera_khs_active_scenario_id") || "default";
+  });
+
+  const activeScenario = scenarios.find((s) => s.id === activeScenarioId) || scenarios[0] || {
+    id: "default",
+    name: "Skenario Utama",
+    semestersData: { 1: [createEmptyRow(3), createEmptyRow(3), createEmptyRow(2), createEmptyRow(4), createEmptyRow(3)] }
+  };
+  const semestersData = activeScenario.semestersData;
+
+  const setSemestersData = (
+    updater: Record<number, CourseRow[]> | ((prev: Record<number, CourseRow[]>) => Record<number, CourseRow[]>)
+  ) => {
+    setScenarios((prevScenarios) =>
+      prevScenarios.map((s) => {
+        if (s.id === activeScenario.id) {
+          const newData = typeof updater === "function" ? updater(s.semestersData) : updater;
+          return { ...s, semestersData: newData };
+        }
+        return s;
+      })
+    );
+  };
+
+  const handleCreateScenario = (copyGrades: boolean) => {
+    const defaultName = copyGrades ? `${activeScenario.name} (Copy)` : "Skenario Baru";
+    const name = window.prompt(
+      copyGrades
+        ? "Masukkan nama skenario duplikat:"
+        : "Masukkan nama skenario baru (struktur disalin, nilai kosong):",
+      defaultName
+    );
+    if (!name || name.trim() === "") return;
+
+    const newId = Math.random().toString(36).substring(2, 9);
+    const newSemestersData: Record<number, CourseRow[]> = {};
+    
+    // Copy the structure of semesters 1-14
+    for (let sem = 1; sem <= 14; sem++) {
+      const rows = semestersData[sem] || [];
+      newSemestersData[sem] = rows.map((row) => ({
+        id: Math.random().toString(36).substring(2, 9),
+        name: row.name,
+        sks: row.sks,
+        grade: copyGrades ? row.grade : "",
+      }));
+    }
+
+    const newScenario: Scenario = {
+      id: newId,
+      name: name.trim(),
+      semestersData: newSemestersData,
+    };
+
+    setScenarios((prev) => [...prev, newScenario]);
+    setActiveScenarioId(newId);
+  };
+
+  const handleRenameScenario = () => {
+    const name = window.prompt("Ubah nama skenario saat ini:", activeScenario.name);
+    if (!name || name.trim() === "" || name.trim() === activeScenario.name) return;
+
+    setScenarios((prev) =>
+      prev.map((s) => (s.id === activeScenario.id ? { ...s, name: name.trim() } : s))
+    );
+  };
+
+  const handleDeleteScenario = () => {
+    if (scenarios.length <= 1) return;
+    if (window.confirm(`Apakah Anda yakin ingin menghapus skenario "${activeScenario.name}"?`)) {
+      const remaining = scenarios.filter((s) => s.id !== activeScenario.id);
+      setScenarios(remaining);
+      setActiveScenarioId(remaining[0].id);
+    }
+  };
+
+  const calculateScenarioStats = (scenario: Scenario) => {
+    let cumulativeSks = 0;
+    let cumulativePoints = 0;
+
+    for (let sem = 1; sem <= 14; sem++) {
+      const semRows = scenario.semestersData[sem];
+      if (semRows) {
+        semRows.forEach((row) => {
+          const sksVal = Number(row.sks);
+          const gradeVal = row.grade;
+
+          if (sksVal > 0 && gradeVal && GRADE_WEIGHTS[gradeVal] !== undefined) {
+            cumulativeSks += sksVal;
+            cumulativePoints += sksVal * GRADE_WEIGHTS[gradeVal];
+          }
+        });
+      }
+    }
+
+    const ipk = cumulativeSks > 0 ? cumulativePoints / cumulativeSks : 0;
+    return { ipk, sks: cumulativeSks };
+  };
 
   const [activeSemester, setActiveSemester] = useState<number>(1);
 
@@ -261,9 +389,10 @@ function App() {
 
       const firstSemWithCourses = result.courses.length > 0 ? Math.min(...result.courses.map((c) => c.semester)) : 1;
       setSelectedPreviewSemester(firstSemWithCourses);
-    } catch (err: any) {
+    } catch (err) {
       console.error(err);
-      setImportError(err.message || "Gagal membaca atau memproses file PDF.");
+      const errMsg = err instanceof Error ? err.message : "Gagal membaca atau memproses file PDF.";
+      setImportError(errMsg);
     } finally {
       setIsParsing(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
@@ -321,8 +450,12 @@ function App() {
 
   // Sync to local storage
   useEffect(() => {
-    localStorage.setItem("itera_khs_semesters", JSON.stringify(semestersData));
-  }, [semestersData]);
+    localStorage.setItem("itera_khs_scenarios", JSON.stringify(scenarios));
+  }, [scenarios]);
+
+  useEffect(() => {
+    localStorage.setItem("itera_khs_active_scenario_id", activeScenarioId);
+  }, [activeScenarioId]);
 
   useEffect(() => {
     localStorage.setItem("itera_khs_target_ipk", targetIpkInput);
@@ -603,6 +736,108 @@ function App() {
                 </div>
 
                 {statusClass !== "status-achievable" && <div className={`estimator-status-box ${statusClass}`}>{statusText}</div>}
+              </div>
+            </div>
+          </section>
+
+          {/* Panel [01-B]: Simulation Scenarios */}
+          <section className="console-panel panel-left-scenarios" style={{ marginTop: "1rem" }}>
+            <div className="corners"></div>
+            <div className="panel-tag">[01-B] SIMULATION SCENARIOS</div>
+
+            <div className="scenario-selector-container">
+              <div className="terminal-select-wrapper">
+                <select
+                  aria-label="Pilih Skenario"
+                  value={activeScenarioId}
+                  onChange={(e) => setActiveScenarioId(e.target.value)}
+                  className="select-scenario-terminal"
+                >
+                  {scenarios.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
+                </select>
+                <svg
+                  className="chevron-arrow-terminal"
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <polyline points="6 9 12 15 18 9"></polyline>
+                </svg>
+              </div>
+
+              <div className="scenario-action-buttons">
+                <button
+                  type="button"
+                  className="btn-scenario-action"
+                  onClick={handleRenameScenario}
+                  title="Ubah nama skenario aktif"
+                >
+                  RENAME
+                </button>
+                <button
+                  type="button"
+                  className="btn-scenario-action"
+                  onClick={() => handleCreateScenario(true)}
+                  title="Duplikat skenario aktif (salin struktur &amp; nilai)"
+                >
+                  DUPLICATE
+                </button>
+                <button
+                  type="button"
+                  className="btn-scenario-action"
+                  onClick={() => handleCreateScenario(false)}
+                  title="Buat skenario baru (hanya salin struktur)"
+                  style={{ gridColumn: "span 2" }}
+                >
+                  NEW SCENARIO (COPY STRUCT)
+                </button>
+                {scenarios.length > 1 && (
+                  <button
+                    type="button"
+                    className="btn-scenario-action danger"
+                    onClick={handleDeleteScenario}
+                    title="Hapus skenario aktif"
+                    style={{ gridColumn: "span 2" }}
+                  >
+                    DELETE ACTIVE
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="scenario-comparison-list">
+              <div className="comparison-header">PERBANDINGAN ESTIMASI IPK</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                {scenarios.map((s) => {
+                  const stats = calculateScenarioStats(s);
+                  const isCurrent = s.id === activeScenarioId;
+                  return (
+                    <div
+                      key={s.id}
+                      className={`comparison-item ${isCurrent ? "active" : ""}`}
+                      onClick={() => setActiveScenarioId(s.id)}
+                    >
+                      <div className="comparison-name-row">
+                        <span className="comparison-name">{s.name}</span>
+                        {isCurrent && <span className="active-tag">AKTIF</span>}
+                      </div>
+                      <div className="comparison-stats">
+                        <span>
+                          IPK: <strong>{stats.ipk.toFixed(2)}</strong>
+                        </span>
+                        <span>{stats.sks} SKS</span>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           </section>
