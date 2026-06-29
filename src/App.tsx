@@ -3,7 +3,6 @@ import type { CourseRow, Scenario } from "./types";
 import { GRADE_WEIGHTS } from "./types";
 import * as pdfjsLib from "pdfjs-dist";
 
-// @ts-expect-error: PDF worker import path is not resolved statically by TypeScript
 import pdfjsWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
